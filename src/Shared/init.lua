@@ -179,9 +179,10 @@ Shared.Shop = {
 }
 
 -- ============================================================
--- Collection milestones (GDD 2.3)
+-- Collection milestones (GDD 2.3 + Phase 2 GDD 7.3)
 -- ============================================================
 Shared.Milestones = {
+    -- MVP Milestones
     {
         Name = "First Catch",
         Key = "FirstCatch",
@@ -217,6 +218,50 @@ Shared.Milestones = {
         Key = "LuckyDay",
         Requirement = { Type = "LegendaryCatches", Count = 1 },
         Reward = { Gems = 250, BadgeEffect = "BioluminescentGlow" },
+    },
+
+    -- Phase 2: Kelp Forest milestones (GDD 7.3)
+    {
+        Name = "Forest Newcomer",
+        Key = "ForestNewcomer",
+        Requirement = { Type = "UniqueSpeciesInZone", Zone = "KelpForest", Count = 1 },
+        Reward = { Coins = 150, UnlockAnimation = "KelpForestCollection" },
+    },
+    {
+        Name = "Canopy Dweller",
+        Key = "CanopyDweller",
+        Requirement = { Type = "UniqueSpeciesInZone", Zone = "KelpForest", Count = 3 },
+        Reward = { Coins = 300, UnlockRod = "AbyssalRod" },
+    },
+    {
+        Name = "Grotto Explorer",
+        Key = "GrottoExplorer",
+        Requirement = { Type = "SpecificCatch", SpeciesKey = "GrottoCrab" },
+        Reward = { Gems = 100, Title = "Grotto Explorer" },
+    },
+    {
+        Name = "Serpent's Bane",
+        Key = "SerpentsBane",
+        Requirement = { Type = "SpecificCatch", SpeciesKey = "KelpSerpent" },
+        Reward = { Gems = 500, BadgeEffect = "SerpentineGreenAura" },
+    },
+    {
+        Name = "Kelp Master",
+        Key = "KelpMaster",
+        Requirement = { Type = "CollectionComplete", Zone = "KelpForest" },
+        Reward = { Coins = 1000, ExclusiveSkin = "KelpWarden", SuitSkin = "Emerald" },
+    },
+    {
+        Name = "Jellyfish Whisperer",
+        Key = "JellyfishWhisperer",
+        Requirement = { Type = "SpecificCatchNoDamage", SpeciesKey = "VoidJellyfish" },
+        Reward = { Gems = 250, Title = "Jellyfish Whisperer" },
+    },
+    {
+        Name = "Forest Heavyweight",
+        Key = "ForestHeavyweight",
+        Requirement = { Type = "WeightOverInZone", Zone = "KelpForest", Kg = 20 },
+        Reward = { Coins = 200, Title = "Forest Heavyweight" },
     },
 }
 

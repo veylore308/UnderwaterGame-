@@ -25,6 +25,7 @@ local FishingService = Knit.CreateService({
         FishCaught = Knit.CreateSignal(),       -- (fishData, rewards)
         FishEscaped = Knit.CreateSignal(),      -- (reason)
         LineSnapped = Knit.CreateSignal(),      -- ()
+        SonarPing = Knit.CreateSignal(),        -- (pingData) — Phase 2 sonar
     },
 })
 
@@ -70,6 +71,126 @@ function FishingService:KnitInit()
     self.Client.CancelFishing:Connect(function(player, castId)
         self:CancelSession(player)
     end)
+
+    -- Start the global sonar loop for all players
+    self:_startSonarLoop()
+end
+
+-- ============================================================
+-- Sonar System (GDD 4.1.1 — Phase 2)
+-- Ping every 3s if equipped rod has SonarRange > 0.
+-- Returns fish within range with rarity-colored silhouettes.
+-- Works through kelp/camouflage — sonar bypasses visual stealth.
+-- ============================================================
+
+FishingService._sonarPlayerData = {} -- { [player] = { lastPingTime, rodKey } }
+
+function FishingService:_startSonarLoop()
+    task.spawn(function()
+        while true do
+            task.wait(0.5) -- check every 500ms for efficiency
+
+            local now = tick()
+            local players = game:GetService("Players"):GetPlayers()
+
+            for _, player in ipairs(players) do
+                local data = self.Services.PlayerDataService:GetData(player)
+                if not data then continue end
+
+                local rod = Shared.Constants.RodTiers.GetByKey(data.Gear.EquippedRod)
+                if not rod or not rod.SonarRange or rod.SonarRange <= 0 then
+                    -- No sonar on this rod — skip
+                    continue
+                end
+
+                local sonarData = self._sonarPlayerData[player]
+                if not sonarData then
+                    sonarData = { lastPingTime = 0 }
+                    self._sonarPlayerData[player] = sonarData
+                end
+
+                local interval = rod.SonarPingInterval or 3.0
+                if (now - sonarData.lastPingTime) >= interval then
+                    sonarData.lastPingTime = now
+                    self:_performSonarPing(player, rod)
+                end
+            end
+        end
+    end)
+end
+
+function FishingService:_performSonarPing(player, rod)
+    local character = player.Character
+    if not character then return end
+    local playerPos = character:GetPivot().Position
+    local sonarRange = rod.SonarRange
+
+    -- Determine which zone the player is in
+    local zoneKey = self.Services.ZoneService:GetPlayerZone(player) or "SunkenShallows"
+
+    -- Get all fish within sonar range from the zone
+    local nearbyFish = self.Services.ZoneService:GetFishNearBobber(playerPos, sonarRange, zoneKey)
+
+    local detectedFish = {}
+    for _, entry in ipairs(nearbyFish) do
+        if entry.Fish and entry.Fish.Species then
+            local species = entry.Fish.Species
+            local distance = entry.Distance or ((entry.Fish:GetPosition() - playerPos).Magnitude)
+
+            -- Sonar bypasses camouflage (GDD 4.1.1: works through kelp/visual obstruction)
+            detectedFish[#detectedFish + 1] = {
+                FishId = entry.Fish.Id,
+                SpeciesKey = species.Key,
+                SpeciesName = species.Name,
+                Rarity = species.Rarity,
+                RarityColor = Shared.Constants.RarityTiers.GetColor(species.Rarity),
+                Distance = distance,
+                Position = entry.Fish:GetPosition(),
+            }
+        end
+    end
+
+    -- Also scan fish from the zone spawner for fish not yet in the near-bobber list
+    local spawner = self.Services.ZoneService:GetSpawner(zoneKey)
+    if spawner then
+        local allFish = spawner:GetAllFish()
+        for fishId, fishNPC in pairs(allFish) do
+            if fishNPC and fishNPC.Species then
+                local fishPos = fishNPC:GetPosition()
+                local dist = (fishPos - playerPos).Magnitude
+                if dist <= sonarRange then
+                    local alreadyListed = false
+                    for _, df in ipairs(detectedFish) do
+                        if df.FishId == fishNPC.Id then
+                            alreadyListed = true
+                            break
+                        end
+                    end
+                    if not alreadyListed then
+                        detectedFish[#detectedFish + 1] = {
+                            FishId = fishNPC.Id,
+                            SpeciesKey = fishNPC.Species.Key,
+                            SpeciesName = fishNPC.Species.Name,
+                            Rarity = fishNPC.Species.Rarity,
+                            RarityColor = Shared.Constants.RarityTiers.GetColor(fishNPC.Species.Rarity),
+                            Distance = dist,
+                            Position = fishPos,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    -- Send ping data to client
+    if #detectedFish > 0 then
+        self.Client.SonarPing:Fire(player, {
+            Origin = playerPos,
+            Range = sonarRange,
+            DetectedFish = detectedFish,
+            Timestamp = tick(),
+        })
+    end
 end
 
 -- ============================================================
@@ -358,6 +479,42 @@ function FishingService:_completeCatch(player, session)
     local species = Shared.Constants.FishSpecies.GetByKey(fishData.SpeciesKey)
     local xp = Shared.Constants.RarityTiers.GetXPValue(fishData.Rarity)
     self.Services.PlayerDataService:AddXP(player, xp)
+
+    -- Award Dive Pass XP based on rarity (GDD 5.4)
+    self.Services.PlayerDataService:AddDivePassXPForCatch(player, fishData.Rarity)
+
+    -- Report to ChallengeService
+    if self.Services.ChallengeService then
+        self.Services.ChallengeService:ReportProgress(player, "CatchRarity", {
+            Rarity = fishData.Rarity,
+            Count = 1,
+        })
+        self.Services.ChallengeService:ReportProgress(player, "CatchAny", {
+            Count = 1,
+        })
+        self.Services.ChallengeService:ReportProgress(player, "CatchWeight", {
+            WeightKg = fishData.Weight,
+            Count = 1,
+        })
+        -- Zone-specific
+        local speciesZone = species.Zone or "SunkenShallows"
+        self.Services.ChallengeService:ReportProgress(player, "CatchInZone", {
+            Zone = speciesZone,
+            Count = 1,
+        })
+    end
+
+    -- Report depth milestone to ChallengeService (if applicable)
+    local playerPos = player.Character and player.Character:GetPivot().Position
+    if playerPos then
+        local depth = math.abs(playerPos.Y) -- assuming Y is vertical, negative = below surface
+        if self.Services.ChallengeService then
+            self.Services.ChallengeService:ReportProgress(player, "DepthReached", {
+                Depth = depth,
+                Count = 1,
+            })
+        end
+    end
 
     -- Cleanup
     self.Client.FishCaught:Fire(player, fishData, { XP = xp })

@@ -46,6 +46,16 @@ local DEFAULT_DATA = {
         TotalCatches = 0,
         Milestones = {},      -- { ["FirstCatch"] = true, ... }
     },
+    DivePass = {
+        XP = 0,               -- Season XP (separate from player level XP)
+        Season = 1,
+        PremiumOwned = false,
+        TiersClaimed = {},    -- { [1] = true, [3] = true, ... }
+    },
+    DailyChallenges = {
+        LastResetDate = 0,    -- midnight UTC timestamp
+        Streak = 0,
+    },
     Stats = {
         TotalCoinsEarned = 0,
         TotalFishCaught = 0,
@@ -320,6 +330,99 @@ function PlayerDataService:CompleteMilestone(player, milestoneKey)
 end
 
 -- ============================================================
+-- Dive Pass XP System (GDD Section 5)
+-- ============================================================
+
+-- 50-tier XP curve: Tier 1 = 400 XP, linear increase to Tier 50 = 1,600 XP
+-- Cumulative: ~50,000 XP total for Tier 50
+local DIVE_PASS_MAX_TIER = 50
+local DIVE_PASS_XP_BASE = 400      -- Tier 1 XP
+local DIVE_PASS_XP_MAX = 1600      -- Tier 50 XP
+local DIVE_PASS_TOTAL_XP = 50000   -- Approximate total for all 50 tiers
+
+--- Calculate XP required to reach a given tier (tier 1 = 0 XP, tier 2+ = cumulative)
+local function getXPForTier(tier)
+    if tier <= 1 then return 0 end
+    -- Linear interpolation: Tier N requires N * interpolated XP
+    -- Base 400 at tier 1-2, linear ramp to 1600 at tier 49-50
+    local ratio = (tier - 1) / (DIVE_PASS_MAX_TIER - 1)
+    local xpPerTier = DIVE_PASS_XP_BASE + (DIVE_PASS_XP_MAX - DIVE_PASS_XP_BASE) * ratio
+    -- Return floor of interpolated XP for this tier threshold
+    return math.floor(xpPerTier)
+end
+
+--- Add Dive Pass XP (separate from player level XP)
+function PlayerDataService:AddDivePassXP(player, amount)
+    local data = self:GetData(player)
+    if not data then return end
+    data.DivePass.XP = data.DivePass.XP + amount
+    self:SaveData(player)
+end
+
+--- Get current Dive Pass tier (1-50)
+function PlayerDataService:GetDivePassTier(player)
+    local data = self:GetData(player)
+    if not data then return 1 end
+
+    local xp = data.DivePass.XP or 0
+    local cumulative = 0
+    for tier = 1, DIVE_PASS_MAX_TIER do
+        local needed = getXPForTier(tier + 1)
+        if xp < needed then
+            return math.min(tier, DIVE_PASS_MAX_TIER)
+        end
+        cumulative = needed
+    end
+    return DIVE_PASS_MAX_TIER
+end
+
+--- Get Dive Pass progress as { CurrentTier, XPInTier, XPRequiredForTier, TotalXP }
+function PlayerDataService:GetDivePassProgress(player)
+    local data = self:GetData(player)
+    if not data then
+        return { CurrentTier = 1, XPInTier = 0, XPRequiredForTier = getXPForTier(2), TotalXP = 0 }
+    end
+
+    local xp = data.DivePass.XP or 0
+    local cumulative = 0
+
+    for tier = 1, DIVE_PASS_MAX_TIER do
+        local nextThreshold = getXPForTier(tier + 1)
+        if xp < nextThreshold then
+            local xpInTier = xp - cumulative
+            local xpForTier = nextThreshold - cumulative
+            return {
+                CurrentTier = tier,
+                XPInTier = math.max(0, xpInTier),
+                XPRequiredForTier = xpForTier,
+                TotalXP = xp,
+            }
+        end
+        cumulative = nextThreshold
+    end
+
+    return {
+        CurrentTier = DIVE_PASS_MAX_TIER,
+        XPInTier = 0,
+        XPRequiredForTier = 1,
+        TotalXP = xp,
+    }
+end
+
+--- Award Dive Pass XP based on fish rarity (GDD 5.4)
+-- Uncommon = 10, Rare = 30, Legendary = 80
+function PlayerDataService:AddDivePassXPForCatch(player, rarity)
+    local xpMap = {
+        Common = 10,
+        Uncommon = 10,
+        Rare = 30,
+        Legendary = 80,
+    }
+    local amount = xpMap[rarity] or 10
+    self:AddDivePassXP(player, amount)
+end
+
+-- ============================================================
 -- Internal: milestone checks
 -- ============================================================
 function PlayerDataService:_checkMilestones(data)
@@ -354,10 +457,40 @@ function PlayerDataService:_checkMilestones(data)
                     unique = unique + 1
                 end
                 met = unique >= req.Count
+            elseif req.Type == "UniqueSpeciesInZone" then
+                local unique = 0
+                for key, log in pairs(data.CollectionLog.Species) do
+                    if Shared.Constants.FishSpecies.IsInZone(key, req.Zone) then
+                        unique = unique + 1
+                    end
+                end
+                met = unique >= req.Count
+            elseif req.Type == "SpecificCatch" then
+                local speciesLog = data.CollectionLog.Species[req.SpeciesKey]
+                met = speciesLog and speciesLog.Caught
+            elseif req.Type == "CollectionComplete" then
+                local zoneSpecies = Shared.Constants.FishSpecies.GetForZone(req.Zone)
+                local allCaught = true
+                for _, species in ipairs(zoneSpecies) do
+                    local log = data.CollectionLog.Species[species.Key]
+                    if not log or not log.Caught then
+                        allCaught = false
+                        break
+                    end
+                end
+                met = allCaught and #zoneSpecies > 0
             elseif req.Type == "WeightOver" and data.Stats.BiggestCatch >= req.Kg then
                 met = true
+            elseif req.Type == "WeightOverInZone" then
+                local zoneSpecies = Shared.Constants.FishSpecies.GetForZone(req.Zone)
+                for _, species in ipairs(zoneSpecies) do
+                    local log = data.CollectionLog.Species[species.Key]
+                    if log and log.BiggestWeight and log.BiggestWeight >= req.Kg then
+                        met = true
+                        break
+                    end
+                end
             end
-            -- CollectionComplete is checked externally when zone is fully collected
 
             if met then
                 data.Progression.Milestones[milestone.Key] = true
