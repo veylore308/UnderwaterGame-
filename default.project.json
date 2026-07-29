@@ -1,0 +1,44 @@
+{
+  "name": "DeepTide",
+  "tree": {
+    "$path": "src",
+    "$className": "Folder",
+
+    "ReplicatedStorage": {
+      "$className": "Folder",
+      "Shared": {
+        "$path": "src/Shared",
+        "$className": "Folder"
+      },
+      "Knit": {
+        "$path": "src/Shared/Knit.lua"
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "Folder",
+      "DataStore2": {
+        "$path": "src/Server/DataStore2.lua"
+      },
+      "Server": {
+        "$path": "src/Server",
+        "$className": "Folder"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "Folder",
+      "StarterPlayerScripts": {
+        "$className": "Folder",
+        "Client": {
+          "$path": "src/Client",
+          "$className": "Folder"
+        }
+      }
+    },
+
+    "ServerStorage": {
+      "$className": "Folder"
+    }
+  }
+}
