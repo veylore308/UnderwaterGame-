@@ -45,6 +45,18 @@ FishSignals.RareFishSpawned = "RareFishSpawned"
 -- effectTypes: "CuriousGlow", "HookedFlash", "TrailParticles", "LeviathanAura"
 FishSignals.FishVFX = "FishVFX"
 
+-- Phase 2: Fired when a Kelp Serpent spawns — zone-wide "The water grows cold..." warning
+-- (position, landmark)
+FishSignals.ApexPresenceWarning = "ApexPresenceWarning"
+
+-- Phase 2: Fired when a Lantern Squid releases ink burst
+-- (fishId, position, radius, duration)
+FishSignals.InkBurst = "InkBurst"
+
+-- Phase 2: Fired when sonar ping detects fish (server→client)
+-- (player, pingData)
+FishSignals.SonarPingResult = "SonarPingResult"
+
 -- ============================================================
 -- Client -> Server signal (for querying nearby fish)
 -- ============================================================
@@ -68,6 +80,14 @@ FishSignals.FishState = {
 	Fighting = "Fighting",
 	Fleeing = "Fleeing",
 	Despawning = "Despawning",
+
+	-- Phase 2: Kelp Forest specific states
+	Camouflaged = "Camouflaged",     -- Kelp Stalker: blended against kelp, nearly invisible
+	Burrowed = "Burrowed",           -- Grotto Crab: hidden in crevice, only eyes visible
+	Emerging = "Emerging",           -- Grotto Crab: emerging from crevice toward bait
+	InkCloud = "InkCloud",           -- Lantern Squid: ink burst active, meter obscured
+	TentacleContact = "TentacleContact", -- Void Jellyfish: player in tentacles, taking damage
+	Enraged = "Enraged",             -- Kelp Serpent: accelerated after failed hook
 }
 
 -- ============================================================
@@ -79,6 +99,16 @@ FishSignals.VFXType = {
 	TrailParticles = "TrailParticles", -- bioluminescent trail behind rare+
 	LeviathanAura = "LeviathanAura",   -- large glowing aura for rare spawns
 	DespawnEffect = "DespawnEffect",   -- particle burst on despawn/catch
+
+	-- Phase 2 effects
+	CamouflageShimmer = "CamouflageShimmer",  -- periodic shimmer on Kelp Stalker
+	InkCloudVFX = "InkCloudVFX",              -- black ink sphere from Lantern Squid
+	TentacleGlow = "TentacleGlow",            -- Void Jellyfish tentacle pulse
+	ApexRedTint = "ApexRedTint",              -- screen-edge red tint during Apex presence
+	SonarPulseVFX = "SonarPulseVFX",          -- expanding ring wave from player
+	KelpEntanglementVFX = "KelpEntanglementVFX", -- kelp strands wrapping player
+	AirPocketBubbles = "AirPocketBubbles",    -- bubble column in cave ceiling
+	CurrentParticles = "CurrentParticles",    -- directional particle stream in The Clearing
 }
 
 return FishSignals
