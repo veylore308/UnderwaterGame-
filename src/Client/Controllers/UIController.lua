@@ -28,6 +28,7 @@ local Shared = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared
 
 local CollectionBook = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("CollectionBook"))
 local ShopScreen = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("ShopScreen"))
+local DivePassScreen = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("DivePassScreen"))
 
 local UIController = Knit.CreateController({
     Name = "UIController",
@@ -58,7 +59,7 @@ local Palette = {
 -- ============================================================
 -- UI State
 -- ============================================================
-UIController._activeScreen = "HUD" -- HUD | Shop | CollectionLog | Settings
+UIController._activeScreen = "HUD" -- HUD | Shop | CollectionLog | DivePass | Settings
 UIController._playerData = nil
 UIController._equippedRodKey = "BambooRod"
 
@@ -110,6 +111,7 @@ function UIController:KnitInit()
     -- Initialize overlay screens
     self._collectionBook = CollectionBook.new()
     self._shopScreen = ShopScreen.new()
+    self._divePassScreen = DivePassScreen.new()
 
     -- Wire purchase/equip callbacks from ShopScreen
     self._shopScreen:SetPurchaseCallback(function(itemType, item, cost, currency, quantity)
@@ -117,6 +119,11 @@ function UIController:KnitInit()
     end)
     self._shopScreen:SetEquipCallback(function(rodKey)
         self:_onRodEquipped(rodKey)
+    end)
+
+    -- Wire DivePass purchase callback
+    self._divePassScreen:SetPurchaseCallback(function(purchaseType)
+        self:_onDivePassPurchase(purchaseType)
     end)
 
     -- Wire keyboard input
@@ -582,8 +589,48 @@ function UIController:_createQuickButtons(parent)
         self:ToggleShop()
     end)
 
+    -- Dive Pass button
+    local divePassBtn = Instance.new("TextButton")
+    divePassBtn.Name = "DivePassBtn"
+    divePassBtn.Size = UDim2.new(0, 52, 0, 52)
+    divePassBtn.Position = UDim2.new(1, -188, 1, -64)
+    divePassBtn.BackgroundColor3 = Palette.ButtonBg
+    divePassBtn.BackgroundTransparency = 0.15
+    divePassBtn.Text = "👑"
+    divePassBtn.Font = Enum.Font.Gotham
+    divePassBtn.TextSize = 24
+    divePassBtn.ZIndex = 10
+    divePassBtn.Parent = parent
+
+    local dpCorner = Instance.new("UICorner")
+    dpCorner.CornerRadius = UDim.new(0, 14)
+    dpCorner.Parent = divePassBtn
+
+    local dpStroke = Instance.new("UIStroke")
+    dpStroke.Color = Palette.Accent
+    dpStroke.Thickness = 1.5
+    dpStroke.Transparency = 0.4
+    dpStroke.Parent = divePassBtn
+
+    local dpLabel = Instance.new("TextLabel")
+    dpLabel.Name = "DivePassLabel"
+    dpLabel.Size = UDim2.new(0, 52, 0, 14)
+    dpLabel.Position = UDim2.new(1, -188, 1, -10)
+    dpLabel.BackgroundTransparency = 1
+    dpLabel.Font = Enum.Font.Gotham
+    dpLabel.TextSize = 9
+    dpLabel.Text = "Dive Pass"
+    dpLabel.TextColor3 = Palette.TextSecondary
+    dpLabel.ZIndex = 10
+    dpLabel.Parent = parent
+
+    divePassBtn.MouseButton1Click:Connect(function()
+        self:ToggleDivePass()
+    end)
+
     self._collectionBtn = collectionBtn
     self._shopBtn = shopBtn
+    self._divePassBtn = divePassBtn
 end
 
 -- ============================================================
@@ -597,6 +644,8 @@ function UIController:_wireKeyboardShortcuts()
             self:ToggleCollectionBook()
         elseif input.KeyCode == Enum.KeyCode.S then
             self:ToggleShop()
+        elseif input.KeyCode == Enum.KeyCode.P then
+            self:ToggleDivePass()
         elseif input.KeyCode == Enum.KeyCode.Escape then
             self:CloseAllScreens()
         end
@@ -615,6 +664,9 @@ function UIController:ToggleCollectionBook()
         if self._activeScreen == "Shop" then
             self:CloseShop()
         end
+        if self._activeScreen == "DivePass" then
+            self:CloseDivePass()
+        end
         self:OpenCollectionLog()
     end
 end
@@ -626,7 +678,24 @@ function UIController:ToggleShop()
         if self._activeScreen == "CollectionLog" then
             self:CloseCollectionLog()
         end
+        if self._activeScreen == "DivePass" then
+            self:CloseDivePass()
+        end
         self:OpenShop()
+    end
+end
+
+function UIController:ToggleDivePass()
+    if self._activeScreen == "DivePass" then
+        self:CloseDivePass()
+    else
+        if self._activeScreen == "CollectionLog" then
+            self:CloseCollectionLog()
+        end
+        if self._activeScreen == "Shop" then
+            self:CloseShop()
+        end
+        self:OpenDivePass()
     end
 end
 
@@ -636,6 +705,9 @@ function UIController:CloseAllScreens()
     end
     if self._activeScreen == "Shop" then
         self:CloseShop()
+    end
+    if self._activeScreen == "DivePass" then
+        self:CloseDivePass()
     end
 end
 
@@ -670,6 +742,25 @@ end
 function UIController:CloseShop()
     if not self._shopScreen then return end
     self._shopScreen:Close()
+    self._activeScreen = "HUD"
+end
+
+-- ============================================================
+-- Open/Close: Dive Pass
+-- ============================================================
+function UIController:OpenDivePass()
+    if not self._divePassScreen then return end
+    self._activeScreen = "DivePass"
+
+    local premiumOwned = (self._playerData and self._playerData.DivePass and self._playerData.DivePass.PremiumOwned) or false
+    self._divePassScreen:Open(self._playerData, premiumOwned, function()
+        self._activeScreen = "HUD"
+    end)
+end
+
+function UIController:CloseDivePass()
+    if not self._divePassScreen then return end
+    self._divePassScreen:Close()
     self._activeScreen = "HUD"
 end
 
@@ -791,6 +882,9 @@ function UIController:_refreshActiveOverlay()
         self._collectionBook:Refresh(self._playerData)
     elseif self._activeScreen == "Shop" and self._shopScreen then
         self._shopScreen:Refresh(self._playerData)
+    elseif self._activeScreen == "DivePass" and self._divePassScreen then
+        local premiumOwned = (self._playerData and self._playerData.DivePass and self._playerData.DivePass.PremiumOwned) or false
+        self._divePassScreen:Refresh(self._playerData, premiumOwned)
     end
 end
 
@@ -863,6 +957,27 @@ function UIController:OnBuyClicked(itemType, item, cost, currency, quantity)
 end
 
 -- ============================================================
+-- Dive Pass Purchase Handler
+-- ============================================================
+function UIController:_onDivePassPurchase(purchaseType)
+    print(string.format("[UIController] Dive Pass purchase: %s", purchaseType))
+
+    -- Route to EconomyService for processing
+    task.spawn(function()
+        local economyService = self.Services.EconomyService
+        if economyService and economyService.Client then
+            local result = economyService.Client.BuyDivePass:Call(purchaseType)
+            if result and result.Success then
+                print("[UIController] Dive Pass purchase successful")
+                -- Player data will be refreshed via DataUpdated event
+            else
+                warn("[UIController] Dive Pass purchase failed:", result and result.Message or "unknown error")
+            end
+        end
+    end)
+end
+
+-- ============================================================
 -- Fish Showcase Popup (delegates to FishingHUD or own popup)
 -- ============================================================
 function UIController:ShowFishShowcase(fishData)
@@ -925,6 +1040,10 @@ function UIController:Destroy()
     if self._shopScreen then
         self._shopScreen:Destroy()
         self._shopScreen = nil
+    end
+    if self._divePassScreen then
+        self._divePassScreen:Destroy()
+        self._divePassScreen = nil
     end
     if self._hudGui then
         self._hudGui:Destroy()
