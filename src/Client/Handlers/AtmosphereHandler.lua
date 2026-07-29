@@ -14,7 +14,13 @@
       - Sandy Plains:   15–30m — open, diffuse light
       - The Shipwreck:  30–45m — cold blue-white, eerie flickering
       - Deep Reef Edge: 45–50m — near-darkness, purple/magenta tint
-]]
+
+    Zone reference: The Kelp Forest (50–150m) — Phase 2
+      - Kelp Canopy:   50–75m  — dark blue-green, dappled god rays through fronds
+      - The Clearing:  75–100m — open teal/cyan, diagonal current particles
+      - Rocky Grotto:  100–130m — near-dark, amber cave glows, bioluminescent lichen
+      - Abyss Edge:    130–150m — near-black, deep purple fog, void silhouettes
+    ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -70,7 +76,89 @@ local LANDMARK_PRESETS = {
         GlowBrightness = 0.3,
         ParticleColor = Color3.fromRGB(180, 80, 255),  -- purple motes
     },
-}
+    }
+
+    -- ============================================================
+    -- Kelp Forest zone lighting presets (Phase 2, GDD §2)
+    -- ============================================================
+    local KELP_LANDMARK_PRESETS = {
+    KelpCanopy = {
+        CenterPosition = Vector3.new(0, -62, 0),
+        Radius = 80,
+        AccentColor = Color3.fromRGB(60, 180, 140),    -- dappled green-gold
+        AccentColor2 = Color3.fromRGB(40, 140, 100),   -- deep teal
+        GlowRange = 14,
+        GlowBrightness = 0.4,
+        ParticleColor = Color3.fromRGB(80, 255, 160),  -- bioluminescent green
+    },
+    TheClearing = {
+        CenterPosition = Vector3.new(25, -87, 20),
+        Radius = 55,
+        AccentColor = Color3.fromRGB(100, 200, 220),   -- open cyan/teal
+        AccentColor2 = Color3.fromRGB(60, 150, 180),   -- mid-water blue
+        GlowRange = 16,
+        GlowBrightness = 0.35,
+        ParticleColor = Color3.fromRGB(140, 220, 255), -- clearing motes
+    },
+    RockyGrotto = {
+        CenterPosition = Vector3.new(-15, -115, -10),
+        Radius = 45,
+        AccentColor = Color3.fromRGB(255, 180, 80),    -- warm amber/gold cave glow
+        AccentColor2 = Color3.fromRGB(200, 140, 60),   -- muted gold
+        GlowRange = 8,
+        GlowBrightness = 0.25,
+        ParticleColor = Color3.fromRGB(100, 220, 200), -- cyan lichen motes
+        -- Air pocket positions for bubble VFX
+        AirPockets = {
+            { Name = "Grotto North Cave", Position = Vector3.new(-20, -108, -5) },
+            { Name = "Grotto South Crevice", Position = Vector3.new(-8, -112, -18) },
+        },
+    },
+    AbyssEdge = {
+        CenterPosition = Vector3.new(-30, -140, -35),
+        Radius = 40,
+        AccentColor = Color3.fromRGB(120, 40, 160),    -- deep purple
+        AccentColor2 = Color3.fromRGB(20, 10, 60),     -- near-black violet
+        GlowRange = 6,
+        GlowBrightness = 0.15,
+        ParticleColor = Color3.fromRGB(160, 80, 255),  -- purple void motes
+    },
+    }
+
+    -- Kelp Forest zone-wide atmosphere parameters
+    local KELP_FOREST_ATMOSPHERE = {
+    -- Navy at 50m → near-black at 150m (GDD §2.2)
+    WaterColorShallow = Color3.fromRGB(10, 22, 40),     -- navy #0A1628 at 50m
+    WaterColorDeep = Color3.fromRGB(2, 8, 16),           -- near-black #020810 at 150m
+    FogColorShallow = Color3.fromRGB(15, 40, 35),        -- deep teal fog at canopy
+    FogColorDeep = Color3.fromRGB(3, 8, 10),             -- murky near-black at 150m
+    AbyssFogColor = Color3.fromRGB(15, 3, 30),           -- deep purple/magenta at 140-150m
+    AbyssFogStartDepth = 140,                             -- studs depth for purple fog transition
+
+    -- Fog increases 2× from Shallows: visibility 40→30 below 100m
+    FogStartShallow = 20,     -- fog begins at 20 studs
+    FogEndShallow = 40,       -- visibility 40 studs (vs 65 in Shallows)
+    FogStartDeep = 15,        -- tighter fog below 100m
+    FogEndDeep = 30,          -- visibility 30 studs below 100m
+
+    -- Bioluminescence: more bloom at depth (less surface light = creatures glow brighter)
+    BloomIntensityBase = 0.45,
+    BloomIntensityDeep = 0.7,
+    BloomThresholdBase = 0.7,
+    BloomThresholdDeep = 0.5,
+
+    -- Darker ambient
+    AmbientShallow = Color3.fromRGB(20, 50, 30),
+    AmbientDeep = Color3.fromRGB(8, 15, 12),
+
+    -- Dappled god rays: fewer, narrower, filtering through canopy
+    GodRayCount = 6,
+    GodRayWidth0 = 0.3,
+    GodRayWidth1 = 0.2,
+
+    -- Depth transition marker for zone boundary
+    BoundaryDepth = 50,
+    }
 
 -- ============================================================
 -- Constructor
@@ -95,11 +183,21 @@ function AtmosphereHandler.new()
     -- State
     self._currentDepth = 0
     self._currentZone = nil
+    self._currentZoneKey = "SunkenShallows"   -- zone tracking for transitions
+    self._previousZoneKey = "SunkenShallows"
+    self._zoneTransitionProgress = 1.0        -- 0→1 tween progress
+    self._zoneTransitionTween = nil           -- active TweenService tween
     self._closestLandmark = nil
     self._isInitialized = false
     self._isUnderwater = false
     self._activeConnections = {}
     self._rareSpawnVFX = {}         -- active rare-spawn particle blooms
+
+    -- Kelp Forest runtime VFX
+    self._airPocketBubbles = {}     -- air pocket bubble column emitters
+    self._currentParticles = nil    -- Clearing diagonal current particles
+    self._grottoSediment = nil      -- Rocky Grotto floating sediment
+    self._entanglementVFX = nil     -- active kelp entanglement particle effect
 
     -- Depth ratio cache
     self._depthRatio = 0            -- 0 (surface) to 1 (max depth)
@@ -128,6 +226,7 @@ function AtmosphereHandler:Initialize()
     self:_createLandmarkLighting()
     self:_createLandmarkParticles()
     self:_createPlanktonEmitters()
+    self:_createKelpForestVFX()       -- Phase 2: Grotto air pockets, current, sediment
 
     -- Player VFX will be created when character spawns
     self:_bindCharacterSpawn()
@@ -433,6 +532,192 @@ function AtmosphereHandler:_createPlanktonEmitters()
             Emitter = emitter,
             Anchor = anchor,
         })
+    end
+end
+
+-- ============================================================
+-- Kelp Forest persistent VFX (Phase 2, GDD §2.6)
+-- Air pocket bubble columns, Clearing current, Grotto sediment
+-- ============================================================
+function AtmosphereHandler:_createKelpForestVFX()
+    -- 1. Air pocket bubble columns (Rocky Grotto, 2 cave locations)
+    local grottoPreset = KELP_LANDMARK_PRESETS.RockyGrotto
+    if grottoPreset and grottoPreset.AirPockets then
+        for _, pocket in ipairs(grottoPreset.AirPockets) do
+            local anchor = Instance.new("Part")
+            anchor.Name = "AirPocketBubbles_" .. pocket.Name:gsub(" ", "_")
+            anchor.Size = Vector3.new(6, 3, 6)
+            anchor.Position = pocket.Position
+            anchor.Transparency = 1
+            anchor.Anchored = true
+            anchor.CanCollide = false
+            anchor.Parent = workspace
+
+            -- Rising bubble column
+            local bubbleEmitter = Instance.new("ParticleEmitter")
+            bubbleEmitter.Name = "AirPocketBubbles"
+            bubbleEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+            bubbleEmitter.Rate = 25
+            bubbleEmitter.Lifetime = NumberRange.new(1, 3)
+            bubbleEmitter.Speed = NumberRange.new(0.5, 2)
+            bubbleEmitter.Size = NumberSequence.new{
+                NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(0.5, 0.2),
+                NumberSequenceKeypoint.new(1, 0.3),
+            }
+            bubbleEmitter.Transparency = NumberSequence.new{
+                NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(0.5, 0.3),
+                NumberSequenceKeypoint.new(1, 0.7),
+            }
+            bubbleEmitter.Color = ColorSequence.new(Color3.fromRGB(220, 240, 255))
+            bubbleEmitter.SpreadAngle = Vector2.new(5, 10)
+            bubbleEmitter.Acceleration = Vector3.new(0, 3, 0)
+            bubbleEmitter.Drag = 0.3
+            bubbleEmitter.LockedToPart = true
+            bubbleEmitter.Enabled = false  -- only in Kelp Forest zone
+            bubbleEmitter.Parent = anchor
+
+            -- Sparkle particles
+            local sparkleEmitter = Instance.new("ParticleEmitter")
+            sparkleEmitter.Name = "AirPocketSparkles"
+            sparkleEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+            sparkleEmitter.Rate = 8
+            sparkleEmitter.Lifetime = NumberRange.new(0.5, 2)
+            sparkleEmitter.Speed = NumberRange.new(0.2, 1)
+            sparkleEmitter.Size = NumberSequence.new{
+                NumberSequenceKeypoint.new(0, 0.03), NumberSequenceKeypoint.new(0.5, 0.1),
+                NumberSequenceKeypoint.new(1, 0.02),
+            }
+            sparkleEmitter.Transparency = NumberSequence.new{
+                NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(0.5, 0.05),
+                NumberSequenceKeypoint.new(1, 1),
+            }
+            sparkleEmitter.Color = ColorSequence.new(Color3.fromRGB(180, 230, 255))
+            sparkleEmitter.SpreadAngle = Vector2.new(10, 20)
+            sparkleEmitter.Acceleration = Vector3.new(0, 1, 0)
+            sparkleEmitter.Drag = 0.5
+            sparkleEmitter.LockedToPart = true
+            sparkleEmitter.Enabled = false
+            sparkleEmitter.Parent = anchor
+
+            -- Warm amber glow light
+            local glowLight = Instance.new("PointLight")
+            glowLight.Name = "AirPocketGlow"
+            glowLight.Brightness = 0.4
+            glowLight.Range = 12
+            glowLight.Color = Color3.fromRGB(255, 200, 100)
+            glowLight.Shadows = false
+            glowLight.Enabled = false
+            glowLight.Parent = anchor
+
+            table.insert(self._airPocketBubbles, {
+                Anchor = anchor,
+                Bubbles = bubbleEmitter,
+                Sparkles = sparkleEmitter,
+                Glow = glowLight,
+            })
+        end
+    end
+
+    -- 2. Diagonal current particles for The Clearing
+    local clearingPreset = KELP_LANDMARK_PRESETS.TheClearing
+    if clearingPreset then
+        local currentAnchor = Instance.new("Part")
+        currentAnchor.Name = "ClearingCurrentVFX"
+        currentAnchor.Size = Vector3.new(clearingPreset.Radius * 1.6, 25, clearingPreset.Radius * 1.6)
+        currentAnchor.Position = clearingPreset.CenterPosition
+        currentAnchor.Transparency = 1
+        currentAnchor.Anchored = true
+        currentAnchor.CanCollide = false
+        currentAnchor.Parent = workspace
+
+        local currentEmitter = Instance.new("ParticleEmitter")
+        currentEmitter.Name = "ClearingCurrent"
+        currentEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        currentEmitter.Rate = 40
+        currentEmitter.Lifetime = NumberRange.new(2, 5)
+        currentEmitter.Speed = NumberRange.new(6, 10)
+        currentEmitter.Size = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.02), NumberSequenceKeypoint.new(0.5, 0.05),
+            NumberSequenceKeypoint.new(1, 0.02),
+        }
+        currentEmitter.Transparency = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(0.3, 0.3),
+            NumberSequenceKeypoint.new(0.7, 0.5), NumberSequenceKeypoint.new(1, 0.9),
+        }
+        currentEmitter.Color = ColorSequence.new(Color3.fromRGB(200, 220, 240))
+        currentEmitter.SpreadAngle = Vector2.new(3, 3)
+        currentEmitter.VelocitySpread = 20
+        currentEmitter.Acceleration = Vector3.new(4, -0.5, -4.5)  -- NW→SE
+        currentEmitter.Drag = 0.1
+        currentEmitter.LockedToPart = true
+        currentEmitter.Enabled = false
+        currentEmitter.Parent = currentAnchor
+
+        self._currentParticles = currentEmitter
+        self._currentParticlesAnchor = currentAnchor
+    end
+
+    -- 3. Rocky Grotto floating sediment + rockfall sparkles
+    local grottoCenter = grottoPreset.CenterPosition
+    local grottoRadius = grottoPreset.Radius
+    if grottoCenter then
+        local sedimentAnchor = Instance.new("Part")
+        sedimentAnchor.Name = "GrottoAmbientVFX"
+        sedimentAnchor.Size = Vector3.new(grottoRadius * 2, 30, grottoRadius * 2)
+        sedimentAnchor.Position = grottoCenter
+        sedimentAnchor.Transparency = 1
+        sedimentAnchor.Anchored = true
+        sedimentAnchor.CanCollide = false
+        sedimentAnchor.Parent = workspace
+
+        local sedimentEmitter = Instance.new("ParticleEmitter")
+        sedimentEmitter.Name = "GrottoSediment"
+        sedimentEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        sedimentEmitter.Rate = 20
+        sedimentEmitter.Lifetime = NumberRange.new(3, 8)
+        sedimentEmitter.Speed = NumberRange.new(0.1, 0.5)
+        sedimentEmitter.Size = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.02), NumberSequenceKeypoint.new(0.5, 0.06),
+            NumberSequenceKeypoint.new(1, 0.02),
+        }
+        sedimentEmitter.Transparency = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.7), NumberSequenceKeypoint.new(0.5, 0.4),
+            NumberSequenceKeypoint.new(1, 0.85),
+        }
+        sedimentEmitter.Color = ColorSequence.new(Color3.fromRGB(140, 130, 120))
+        sedimentEmitter.SpreadAngle = Vector2.new(0, 360)
+        sedimentEmitter.Acceleration = Vector3.new(0, -0.05, 0)
+        sedimentEmitter.Drag = 0.8
+        sedimentEmitter.LockedToPart = true
+        sedimentEmitter.Enabled = false
+        sedimentEmitter.Parent = sedimentAnchor
+
+        -- Rockfall sparkles
+        local rockfallEmitter = Instance.new("ParticleEmitter")
+        rockfallEmitter.Name = "GrottoRockfall"
+        rockfallEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        rockfallEmitter.Rate = 3
+        rockfallEmitter.Lifetime = NumberRange.new(0.5, 1.5)
+        rockfallEmitter.Speed = NumberRange.new(1, 4)
+        rockfallEmitter.Size = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.04), NumberSequenceKeypoint.new(0.5, 0.12),
+            NumberSequenceKeypoint.new(1, 0.02),
+        }
+        rockfallEmitter.Transparency = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(0.3, 0.1),
+            NumberSequenceKeypoint.new(1, 1),
+        }
+        rockfallEmitter.Color = ColorSequence.new(Color3.fromRGB(180, 170, 160))
+        rockfallEmitter.SpreadAngle = Vector2.new(10, 20)
+        rockfallEmitter.Acceleration = Vector3.new(0, -2, 0)
+        rockfallEmitter.Drag = 0.3
+        rockfallEmitter.LockedToPart = true
+        rockfallEmitter.Enabled = false
+        rockfallEmitter.Parent = sedimentAnchor
+
+        self._grottoSediment = sedimentEmitter
+        self._grottoRockfall = rockfallEmitter
+        self._grottoSedimentAnchor = sedimentAnchor
     end
 end
 
@@ -1003,18 +1288,46 @@ function AtmosphereHandler:UpdateDepth(depth, isUnderwater)
     self._currentDepth = depth
     self._isUnderwater = isUnderwater or false
 
-    -- Compute depth ratio from zone config
+    -- === ZONE DETECTION: Check if we've crossed a zone boundary ===
     local zone = ZoneConfigs.GetZoneAtDepth(depth)
+    local zoneKey = (zone and zone.Key) or "SunkenShallows"
+
+    if zoneKey ~= self._currentZoneKey and not self._zoneTransitionTween then
+        -- Zone boundary crossed — trigger transition
+        self._previousZoneKey = self._currentZoneKey
+        self._currentZoneKey = zoneKey
+        self:_onZoneTransition(self._previousZoneKey, self._currentZoneKey)
+    end
+
+    -- Compute depth ratio from zone config
     local maxDepth = (zone and zone.DepthMax) or 50
     self._depthRatio = math.clamp(depth / maxDepth, 0, 1)
 
     local dr = self._depthRatio  -- shorthand
+    local isKelpForest = (zoneKey == "KelpForest")
+
+    -- === ZONE-SPECIFIC FOG & AMBIENT ===
+    if isKelpForest then
+        -- Kelp Forest atmosphere: darker, denser fog, more bioluminescence
+        self:_applyKelpForestLighting(depth, dr)
+    else
+        -- Sunken Shallows: restore default underwater atmosphere
+        self:_applyShallowsLighting(dr)
+    end
 
     -- === Bloom: depth-based bioluminescence pop + oxygen warning overlay ===
     local bloom = Lighting:FindFirstChild("Bloom")
     if bloom then
-        local baseIntensity = 0.3 + dr * 0.5
-        local baseThreshold = 0.85 - dr * 0.2
+        local baseIntensity, baseThreshold
+        if isKelpForest then
+            -- More bloom at depth (less surface light = bioluminescence pops more)
+            local kelpAtmo = KELP_FOREST_ATMOSPHERE
+            baseIntensity = kelpAtmo.BloomIntensityBase + dr * 0.25
+            baseThreshold = kelpAtmo.BloomThresholdBase - dr * 0.2
+        else
+            baseIntensity = 0.3 + dr * 0.5
+            baseThreshold = 0.85 - dr * 0.2
+        end
 
         if self._oxygenWarningEnabled and self._oxygenWarningIntensity > 0 then
             local wi = self._oxygenWarningIntensity
@@ -1033,7 +1346,6 @@ function AtmosphereHandler:UpdateDepth(depth, isUnderwater)
             dof.FarIntensity = 0.1 + dr * 0.15
             dof.FocusDistance = 30 - dr * 15
         else
-            -- Surface defaults (no underwater blur)
             dof.FarIntensity = 0.05
             dof.FocusDistance = 100
         end
@@ -1052,13 +1364,262 @@ function AtmosphereHandler:UpdateDepth(depth, isUnderwater)
                 255 * (1 - wi * 0.6)
             )
             cc.TintColor = cc.TintColor:Lerp(redTint, 0.5)
+        elseif isKelpForest then
+            -- Kelp Forest: green-shifted tint
+            cc.Saturation = -0.12
+            cc.Contrast = 0.08
+            cc.TintColor = Color3.fromRGB(140, 200, 180)
         else
-            -- Reset to underwater base (no warning)
             cc.Saturation = -0.08
             cc.Contrast = 0.05
             cc.TintColor = Color3.fromRGB(180, 220, 255)
         end
     end
+
+    -- === SUNRAYS: reduce in Kelp Forest (dappled light through canopy) ===
+    local sunRays = Lighting:FindFirstChild("SunRays")
+    if sunRays then
+        if isKelpForest then
+            sunRays.Intensity = 0.1 + (1 - dr) * 0.1   -- much less surface light
+            sunRays.Spread = 0.2
+        else
+            sunRays.Intensity = 0.25
+            sunRays.Spread = 0.4
+        end
+    end
+end
+
+-- ============================================================
+-- Kelp Forest lighting application
+-- ============================================================
+function AtmosphereHandler:_applyKelpForestLighting(depth, dr)
+    local atmo = KELP_FOREST_ATMOSPHERE
+
+    -- Fog: denser, starts closer
+    -- Above 100m: FogStart=20, FogEnd=40 (40 studs visibility)
+    -- Below 100m: FogStart=15, FogEnd=30 (30 studs visibility)
+    local fogStart, fogEnd, fogColor
+    if depth >= 100 then
+        fogStart = atmo.FogStartDeep
+        fogEnd = atmo.FogEndDeep
+    else
+        fogStart = atmo.FogStartShallow
+        fogEnd = atmo.FogEndShallow
+    end
+
+    -- Below AbyssFogStartDepth (140m): transition to deep purple/magenta
+    if depth >= atmo.AbyssFogStartDepth then
+        local abyssBlend = math.clamp((depth - atmo.AbyssFogStartDepth) / 10, 0, 1)
+        fogColor = atmo.FogColorDeep:Lerp(atmo.AbyssFogColor, abyssBlend)
+    else
+        -- Interpolate fog color from shallow to deep
+        local depthBlend = math.clamp((depth - 50) / 50, 0, 1)  -- 50→100m gradient
+        fogColor = atmo.FogColorShallow:Lerp(atmo.FogColorDeep, depthBlend)
+    end
+
+    Lighting.FogColor = fogColor
+    Lighting.FogStart = fogStart
+    Lighting.FogEnd = fogEnd
+
+    -- Ambient: darker blue-green, trending toward near-black
+    local ambientBlend = math.clamp((depth - 50) / 100, 0, 1)  -- 50→150m
+    Lighting.Ambient = atmo.AmbientShallow:Lerp(atmo.AmbientDeep, ambientBlend)
+
+    -- Atmosphere (volumetric): denser at depth
+    local atmosphere = Lighting:FindFirstChild("Atmosphere")
+    if atmosphere then
+        atmosphere.Density = 0.35 + dr * 0.3
+        atmosphere.Haze = 0.8 + dr * 0.4
+    end
+end
+
+-- ============================================================
+-- Sunken Shallows lighting restoration
+-- ============================================================
+function AtmosphereHandler:_applyShallowsLighting(dr)
+    -- Restore standard Shallows parameters
+    local zone = ZoneConfigs.GetByKey("SunkenShallows")
+    if zone and zone.Environment then
+        local env = zone.Environment
+        Lighting.FogColor = env.WaterColor
+        Lighting.FogStart = env.FogStart or 20
+        Lighting.FogEnd = env.Visibility or 65
+    else
+        Lighting.FogColor = Color3.fromRGB(64, 180, 200)
+        Lighting.FogStart = 20
+        Lighting.FogEnd = 65
+    end
+    Lighting.Ambient = Color3.fromRGB(30, 60, 120)
+end
+
+-- ============================================================
+-- Zone transition: triggered when crossing 50m boundary
+-- ============================================================
+function AtmosphereHandler:_onZoneTransition(fromZone, toZone)
+    print("[AtmosphereHandler] Zone transition: " .. fromZone .. " → " .. toZone)
+
+    -- Cancel any existing transition tween
+    if self._zoneTransitionTween then
+        self._zoneTransitionTween:Cancel()
+        self._zoneTransitionTween = nil
+    end
+
+    self._zoneTransitionProgress = 0
+
+    -- Fire UI popup event via Knit signal (if available)
+    local zoneNames = {
+        SunkenShallows = "Sunken Shallows",
+        KelpForest = "Kelp Forest",
+    }
+    local fromName = zoneNames[fromZone] or fromZone
+    local toName = zoneNames[toZone] or toZone
+
+    local message
+    if toZone == "KelpForest" then
+        message = "Entering: Kelp Forest"
+        -- Enable Kelp Forest VFX
+        self:_enableKelpForestVFX(true)
+    elseif toZone == "SunkenShallows" then
+        message = "Ascending: Sunken Shallows"
+        -- Disable Kelp Forest VFX
+        self:_enableKelpForestVFX(false)
+    end
+
+    -- Try to fire the zone transition signal via Knit
+    pcall(function()
+        local Knit = require(ReplicatedStorage:WaitForChild("Knit"))
+        local zoneTransitionSignal = Knit.GetSignal("ZoneTransition")
+        if zoneTransitionSignal then
+            zoneTransitionSignal:Fire(fromZone, toZone, message)
+        end
+    end)
+
+    -- 2-second smooth transition tween
+    local tweenInfo = TweenInfo.new(2.0, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tweenGoal = { _zoneTransitionProgress = 1.0 }
+
+    self._zoneTransitionTween = TweenService:Create(self, tweenInfo, tweenGoal)
+    self._zoneTransitionTween:Play()
+    self._zoneTransitionTween.Completed:Connect(function()
+        self._zoneTransitionTween = nil
+        self._zoneTransitionProgress = 1.0
+        print("[AtmosphereHandler] Zone transition complete: " .. toName)
+    end)
+end
+
+-- ============================================================
+-- Enable/disable Kelp Forest-specific VFX based on zone
+-- ============================================================
+function AtmosphereHandler:_enableKelpForestVFX(enabled)
+    -- Air pocket bubbles
+    for _, pocket in ipairs(self._airPocketBubbles) do
+        if pocket.Bubbles then pocket.Bubbles.Enabled = enabled end
+        if pocket.Sparkles then pocket.Sparkles.Enabled = enabled end
+        if pocket.Glow then pocket.Glow.Enabled = enabled end
+    end
+
+    -- Clearing current particles
+    if self._currentParticles then
+        self._currentParticles.Enabled = enabled
+    end
+
+    -- Grotto sediment + rockfall
+    if self._grottoSediment then
+        self._grottoSediment.Enabled = enabled
+    end
+    if self._grottoRockfall then
+        self._grottoRockfall.Enabled = enabled
+    end
+end
+
+-- ============================================================
+-- Public API: Smooth zone transition (can be called externally)
+-- ============================================================
+function AtmosphereHandler:TransitionToKelpForest()
+    if self._currentZoneKey == "KelpForest" then return end
+    print("[AtmosphereHandler] TransitionToKelpForest() called")
+    self._previousZoneKey = self._currentZoneKey
+    self._currentZoneKey = "KelpForest"
+    self:_onZoneTransition(self._previousZoneKey, "KelpForest")
+end
+
+function AtmosphereHandler:TransitionToShallows()
+    if self._currentZoneKey == "SunkenShallows" then return end
+    print("[AtmosphereHandler] TransitionToShallows() called")
+    self._previousZoneKey = self._currentZoneKey
+    self._currentZoneKey = "SunkenShallows"
+    self:_onZoneTransition(self._previousZoneKey, "SunkenShallows")
+end
+
+-- ============================================================
+-- Kelp entanglement VFX — called when player is snared
+-- ============================================================
+function AtmosphereHandler:PlayKelpEntanglementVFX(playerPosition)
+    -- Create green-brown particle burst at entanglement point
+    local anchor = Instance.new("Part")
+    anchor.Name = "KelpEntanglementVFX"
+    anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+    anchor.Position = playerPosition
+    anchor.Transparency = 1
+    anchor.Anchored = true
+    anchor.CanCollide = false
+    anchor.Parent = workspace
+
+    local emitter = Instance.new("ParticleEmitter")
+    emitter.Name = "KelpEntangleEmitter"
+    emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    emitter.Rate = 80
+    emitter.Lifetime = NumberRange.new(0.5, 1.5)
+    emitter.Speed = NumberRange.new(2, 6)
+    emitter.Size = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0.05),
+        NumberSequenceKeypoint.new(0.3, 0.15),
+        NumberSequenceKeypoint.new(1, 0.02),
+    }
+    emitter.Transparency = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0.3),
+        NumberSequenceKeypoint.new(0.5, 0.1),
+        NumberSequenceKeypoint.new(1, 1),
+    }
+    emitter.Color = ColorSequence.new(Color3.fromRGB(30, 90, 25))  -- green-brown
+    emitter.SpreadAngle = Vector2.new(0, 360)
+    emitter.Acceleration = Vector3.new(0, 1, 0)
+    emitter.Drag = 0.6
+    emitter.LockedToPart = true
+    emitter.Enabled = true
+    emitter.Parent = anchor
+
+    -- Also emit brownish "tangled" motes
+    local brownEmitter = Instance.new("ParticleEmitter")
+    brownEmitter.Name = "KelpEntangleBrown"
+    brownEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    brownEmitter.Rate = 30
+    brownEmitter.Lifetime = NumberRange.new(0.3, 1.0)
+    brownEmitter.Speed = NumberRange.new(1, 3)
+    brownEmitter.Size = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0.03),
+        NumberSequenceKeypoint.new(0.5, 0.08),
+        NumberSequenceKeypoint.new(1, 0.01),
+    }
+    brownEmitter.Transparency = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0.4),
+        NumberSequenceKeypoint.new(0.5, 0.2),
+        NumberSequenceKeypoint.new(1, 0.9),
+    }
+    brownEmitter.Color = ColorSequence.new(Color3.fromRGB(80, 60, 30))
+    brownEmitter.SpreadAngle = Vector2.new(5, 15)
+    brownEmitter.Acceleration = Vector3.new(0, 0.5, 0)
+    brownEmitter.Drag = 0.7
+    brownEmitter.LockedToPart = true
+    brownEmitter.Enabled = true
+    brownEmitter.Parent = anchor
+
+    -- Auto-destroy after 2 seconds
+    task.delay(2, function()
+        anchor:Destroy()
+    end)
+
+    self._entanglementVFX = anchor
 end
 
 -- Called when player breaches surface

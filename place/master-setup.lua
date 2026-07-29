@@ -498,9 +498,191 @@ print("[Setup] Part 2/3 complete.")
 print("")
 
 -- ============================================================
--- PART 3: VERIFICATION
+-- PART 3: KELP FOREST ZONE SETUP (Phase 2)
+-- Kelp strand assemblies, Rocky Grotto structures, Abyss Edge,
+-- air pocket bubbles, current particles, bioluminescent plankton
 -- ============================================================
-print("[Setup] Part 3/3: Verifying project structure...")
+print("[Setup] Part 3/4: Setting up Kelp Forest zone (Phase 2)...")
+
+-- 3a. Create kelp strands (run kelp-forest-setup inline)
+print("[KelpForest] Creating kelp strand assemblies...")
+
+local function createKelpStrand(basePos, height, color, swaySpeed, swayPhase)
+    local base = Instance.new("Part")
+    base.Name = "KelpBase"
+    base.Size = Vector3.new(0.4, 0.4, 0.4)
+    base.Position = basePos
+    base.Anchored = true
+    base.CanCollide = false
+    base.Transparency = 0.8
+    base.Color = color
+    base.Material = Enum.Material.Grass
+    base.Parent = Workspace
+
+    local top = Instance.new("Part")
+    top.Name = "KelpTop"
+    top.Size = Vector3.new(0.15, 0.15, 0.15)
+    top.Position = basePos + Vector3.new(0, height, 0)
+    top.Anchored = true
+    top.CanCollide = false
+    top.Transparency = 1
+    top.Parent = Workspace
+
+    local attachBase = Instance.new("Attachment"); attachBase.Name = "KelpBaseAttach"; attachBase.Parent = base
+    local attachTop = Instance.new("Attachment"); attachTop.Name = "KelpTopAttach"; attachTop.Parent = top
+
+    local beam = Instance.new("Beam")
+    beam.Name = "KelpBeam"; beam.Attachment0 = attachBase; beam.Attachment1 = attachTop
+    beam.Color = ColorSequence.new(color)
+    beam.Width0 = 0.3 + math.random() * 0.3; beam.Width1 = 0.08 + math.random() * 0.1
+    beam.Transparency = NumberSequence.new(0.25)
+    beam.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    beam.TextureSpeed = 0.005 + math.random() * 0.01; beam.TextureLength = 1
+    beam.CurveSize0 = 1.5 + math.random() * 2; beam.CurveSize1 = -(1 + math.random() * 2)
+    beam.FaceCamera = true; beam.Parent = base
+
+    -- Sway animation
+    RunService.Heartbeat:Connect(function()
+        if not top or not top.Parent then return end
+        local swayX = math.sin(tick() * swaySpeed + swayPhase) * 1.2
+        local swayZ = math.cos(tick() * (swaySpeed * 0.8) + swayPhase + 1) * 1.2
+        top.Position = Vector3.new(basePos.X + swayX, basePos.Y + height, basePos.Z + swayZ)
+    end)
+    return { Base = base, Top = top, Beam = beam, BasePosition = basePos }
+end
+
+local kelpColors = {
+    Color3.fromRGB(20, 80, 30), Color3.fromRGB(15, 70, 25), Color3.fromRGB(25, 90, 35),
+    Color3.fromRGB(30, 60, 20), Color3.fromRGB(18, 75, 28), Color3.fromRGB(40, 50, 25),
+}
+
+-- Kelp Canopy strands (Y=-50 to -75, center 0,-62,0, radius 80)
+local canopyKelpCount = 0
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj.Name == "KelpBase" then canopyKelpCount = canopyKelpCount + 1 end
+end
+if canopyKelpCount < 30 then
+    local canopyCenter = Vector3.new(0, -62, 0)
+    local canopyRadius = 80
+    local placed = 0
+    for _ = 1, 45 do
+        local angle = math.random() * math.pi * 2
+        local r = math.random() * canopyRadius * 0.85
+        local x = canopyCenter.X + math.cos(angle) * r
+        local z = canopyCenter.Z + math.sin(angle) * r
+        local y = -50 - math.random() * 25
+        if math.random() < 0.7 then
+            createKelpStrand(Vector3.new(x, y, z), 50 + math.random() * 50, kelpColors[math.random(1, #kelpColors)], 0.7 + math.random() * 0.6, math.random() * math.pi * 2)
+            placed = placed + 1
+        end
+    end
+    print("[KelpForest]   ✓ " .. placed .. " kelp canopy strands created")
+else
+    print("[KelpForest]   Kelp strands already exist — skipping (" .. canopyKelpCount .. " found)")
+end
+
+-- 3b. Rocky Grotto rocks & caves (Y=-100 to -130, center -15,-115,-10, radius 45)
+local grottoRockCount = 0
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj.Name:find("GrottoRock_") then grottoRockCount = grottoRockCount + 1 end
+end
+if grottoRockCount < 6 then
+    local grottoCenter = Vector3.new(-15, -115, -10)
+    local grottoRadius = 45
+    for i = 1, 10 do
+        local angle = (i / 10) * math.pi * 2 + math.random() * 0.3
+        local r = math.random() * grottoRadius * 0.7
+        local rock = Instance.new("Part")
+        rock.Name = "GrottoRock_" .. i
+        rock.Size = Vector3.new(6 + math.random() * 10, 4 + math.random() * 8, 6 + math.random() * 10)
+        rock.Position = Vector3.new(grottoCenter.X + math.cos(angle) * r, grottoCenter.Y + math.random() * 15 - 7, grottoCenter.Z + math.sin(angle) * r)
+        rock.Anchored = true; rock.CanCollide = true
+        rock.Color = Color3.fromRGB(25 + math.random() * 20, 20 + math.random() * 15, 30 + math.random() * 15)
+        rock.Material = Enum.Material.Basalt
+        rock.Parent = Workspace
+    end
+    print("[KelpForest]   ✓ Rocky Grotto created (10 rocks)")
+else
+    print("[KelpForest]   Rocky Grotto already exists — skipping")
+end
+
+-- 3c. Abyss Edge void boundary (Y=-130 to -150)
+local abyssWall = Workspace:FindFirstChild("AbyssVoidWall")
+if not abyssWall then
+    local abyssCenter = Vector3.new(-30, -140, -35)
+    local abyssRadius = 40
+    local voidWall = Instance.new("Part")
+    voidWall.Name = "AbyssVoidWall"
+    voidWall.Size = Vector3.new(120, 30, 2)
+    voidWall.Position = abyssCenter + Vector3.new(0, 0, -abyssRadius * 0.8)
+    voidWall.Anchored = true; voidWall.CanCollide = true
+    voidWall.Transparency = 0.9; voidWall.Color = Color3.fromRGB(2, 0, 8)
+    voidWall.Material = Enum.Material.Glass
+    voidWall.Parent = Workspace
+    print("[KelpForest]   ✓ Abyss Edge void boundary created")
+else
+    print("[KelpForest]   Abyss Edge already exists — skipping")
+end
+
+-- 3d. Air pocket bubble VFX (2 grotto cave locations)
+local airPocketPositions = {
+    Vector3.new(-20, -108, -5),
+    Vector3.new(-8, -112, -18),
+}
+for i, pos in ipairs(airPocketPositions) do
+    local anchorName = "AirPocketVFX_" .. i
+    if not Workspace:FindFirstChild(anchorName) then
+        local anchor = Instance.new("Part")
+        anchor.Name = anchorName; anchor.Size = Vector3.new(6, 3, 6)
+        anchor.Position = pos; anchor.Transparency = 1
+        anchor.Anchored = true; anchor.CanCollide = false; anchor.Parent = Workspace
+        local emitter = Instance.new("ParticleEmitter")
+        emitter.Name = "AirPocketBubbles"; emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        emitter.Rate = 25; emitter.Lifetime = NumberRange.new(1, 3); emitter.Speed = NumberRange.new(0.5, 2)
+        emitter.Size = NumberSequence.new{ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(0.5, 0.2), NumberSequenceKeypoint.new(1, 0.3) }
+        emitter.Transparency = NumberSequence.new{ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(0.5, 0.3), NumberSequenceKeypoint.new(1, 0.7) }
+        emitter.Color = ColorSequence.new(Color3.fromRGB(220, 240, 255))
+        emitter.SpreadAngle = Vector2.new(5, 10); emitter.Acceleration = Vector3.new(0, 3, 0)
+        emitter.Drag = 0.3; emitter.LockedToPart = true; emitter.Enabled = true; emitter.Parent = anchor
+    end
+end
+print("[KelpForest]   ✓ Air pocket bubble columns created")
+
+-- 3e. Bioluminescent plankton for Kelp Forest (brighter, more dense)
+local kelpPlanktonCount = 0
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj.Name:find("KelpPlankton_") then kelpPlanktonCount = kelpPlanktonCount + 1 end
+end
+if kelpPlanktonCount < 4 then
+    local kelpPlanktonPos = {
+        Vector3.new(-20, -60, -15), Vector3.new(15, -55, 10), Vector3.new(-10, -55, 20),
+        Vector3.new(5, -70, -15), Vector3.new(25, -85, 15), Vector3.new(35, -90, 5),
+    }
+    for i, pos in ipairs(kelpPlanktonPos) do
+        local anchor = Instance.new("Part")
+        anchor.Name = "KelpPlankton_" .. i; anchor.Size = Vector3.new(25, 12, 25)
+        anchor.Position = pos; anchor.Transparency = 1
+        anchor.Anchored = true; anchor.CanCollide = false; anchor.Parent = Workspace
+        local emitter = Instance.new("ParticleEmitter")
+        emitter.Name = "KelpPlanktonEmitter"; emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+        emitter.Rate = 8 + math.random() * 6; emitter.Lifetime = NumberRange.new(2, 6); emitter.Speed = NumberRange.new(0.1, 0.6)
+        emitter.Size = NumberSequence.new{ NumberSequenceKeypoint.new(0, 0.03), NumberSequenceKeypoint.new(0.5, 0.15), NumberSequenceKeypoint.new(1, 0.02) }
+        emitter.Transparency = NumberSequence.new{ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(0.3, 0.05), NumberSequenceKeypoint.new(0.7, 0.15), NumberSequenceKeypoint.new(1, 1) }
+        local hue = 0.45 + math.random() * 0.15
+        emitter.Color = ColorSequence.new(Color3.fromHSV(hue, 0.7, 0.95))
+        emitter.SpreadAngle = Vector2.new(0, 360); emitter.Acceleration = Vector3.new(0, 0.2, 0)
+        emitter.Drag = 0.3; emitter.LockedToPart = true; emitter.Enabled = true; emitter.Parent = anchor
+    end
+    print("[KelpForest]   ✓ " .. #kelpPlanktonPos .. " Kelp Forest plankton fields created")
+end
+
+print("[Setup] Part 3/4 complete.")
+print("")
+
+-- ============================================================
+-- PART 4: VERIFICATION
+-- ============================================================
+print("[Setup] Part 4/4: Verifying project structure...")
 
 -- Check Rojo-synced modules
 local sharedOk = pcall(function()
@@ -557,14 +739,21 @@ print("  ☑ Landmark lights: Coral Gardens, Shipwreck, Deep Reef Edge")
 print("  ☑ Bioluminescent particle emitters at all landmarks")
 print("  ☑ Global marine snow (80 particles/s)")
 print("  ☑ 8 plankton fields")
+print("  -------------------- Phase 2: Kelp Forest --------------------")
+print("  ☑ ~30 Kelp Forest canopy strands (Beam-based with sway)")
+print("  ☑ Rocky Grotto rock formations (10 rocks)")
+print("  ☑ Abyss Edge void boundary wall")
+print("  ☑ Air pocket bubble columns (2 cave locations)")
+print("  ☑ 6 Kelp Forest bioluminescent plankton fields")
 print("")
-print("To test the full MVP loop:")
+print("To test the full MVP + Phase 2 loop:")
 print("  1. Make sure Rojo is synced (rojo serve)")
 print("  2. Press Play in Roblox Studio")
 print("  3. You should see:")
 print("     - Deep Tide Studios banner in Output")
-print("     - Fish NPCs spawning underwater")
+print("     - Fish NPCs spawning underwater in both zones")
 print("     - Full atmosphere (god rays, fog, particles)")
+print("     - Zone transition when crossing 50m: Kelp Forest lighting kicks in")
 print("     - HUD overlay (coins, gems, oxygen, depth)")
 print("  4. Equip rod → dive underwater → cast → catch fish!")
 print("  5. Press B for Collection Book, S for Shop")
@@ -572,6 +761,7 @@ print("")
 print("Runtime systems (loaded at Play):")
 print("  - CameraController: depth fog, camera bob, fishing cam")
 print("  - AtmosphereHandler: dynamic VFX, rare spawn blooms, bubble trails")
+print("  - AtmosphereHandler (Phase 2): zone transitions, kelp lighting, air pockets")
 print("  - FishingController: full cast/hook/reel loop")
 print("  - UIController: persistent HUD, CollectionBook, ShopScreen")
 print("  - FishSpawner: NPC spawning, schooling, rare conditions")
