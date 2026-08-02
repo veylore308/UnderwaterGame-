@@ -62,6 +62,10 @@ local DEFAULT_DATA = {
         BiggestCatch = 0,     -- kg
         PlayTime = 0,         -- seconds
     },
+    boatData = { OwnedBoats = { Raft = true }, EquippedBoat = "Raft", BoatCosmetics = { Skins = {}, Flags = {}, Trails = {}, HullGlows = {} } },
+    captainData = { CaptainXP = 0, CaptainRank = "Deckhand", RankUnlocks = {} },
+    tradeData = { ActiveListings = {}, TradeHistory = {}, VerifiedTrader = false, ListingSlots = 2 },
+    GuildId = nil,
     Settings = {
         AudioCueEnabled = false, -- accessibility: beep for hook sweet zone
     },

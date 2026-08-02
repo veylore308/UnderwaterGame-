@@ -620,3 +620,17 @@ function FishingService:_getTensionZone(tension)
 end
 
 return FishingService
+
+-- Phase 3 surface helpers. BoatService remains the server authority for speed.
+function FishingService:IsSurfaceCast(player, targetPosition)
+    local boatService = self.Services.BoatService
+    local boat = boatService and boatService:GetBoat(player)
+    if not boat then return false, "No boat" end
+    local speed = boatService:GetBoatSpeed(player)
+    if speed >= 2 and boatService.SetAnchor then boatService:SetAnchor(player) end
+    return true, { Zone = "Surface", BobberDriftSpeed = (self.Services.WeatherService and self.Services.WeatherService:GetState() == "Storm") and 8 or 3, BoatSpeedLimit = 8 }
+end
+function FishingService:ValidateSurfaceLine(player)
+    local boatService = self.Services.BoatService
+    return not boatService or boatService:GetBoatSpeed(player) <= 8
+end

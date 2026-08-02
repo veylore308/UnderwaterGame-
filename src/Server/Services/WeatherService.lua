@@ -1,0 +1,6 @@
+local Knit=require(game:GetService("ReplicatedStorage"):WaitForChild("Knit")); local C=require(game:GetService("ReplicatedStorage").Shared.Constants.WeatherConfigs); local S=Knit.CreateService({Name="WeatherService",Client={WeatherChanged=Knit.CreateSignal(),GetWeather=Knit.CreateSignal()}}); S.State="Calm"; S.EndsAt=0
+function S:KnitStart() self:RollWeather(); task.spawn(function() while true do task.wait(math.max(1,self.EndsAt-os.time())); self:RollWeather() end end) end
+function S:RollWeather() local names={}; for n in pairs(C.States) do if n~=self.State or not C.NoRepeatStates then names[#names+1]=n end end; local total=0; for _,n in ipairs(names) do total+=C.States[n].Weight end; local pick=math.random()*total; local chosen=names[1]; for _,n in ipairs(names) do pick-=C.States[n].Weight; if pick<=0 then chosen=n; break end end; local cfg=C.States[chosen]; self.State=chosen; self.EndsAt=os.time()+math.random(cfg.MinDuration,cfg.MaxDuration); self.Client.WeatherChanged:FireAll({State=chosen,EndsAt=self.EndsAt,Config=cfg}); if chosen=="Storm" then print("[Weather] Something huge is riding the storm…") end end
+function S:GetState() return self.State,C.States[self.State] end
+function S:GetSurfaceSpawnMods() return C.States[self.State].SpawnMods end
+return S

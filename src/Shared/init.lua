@@ -14,6 +14,9 @@ Shared.Constants = {
     SuitTiers = require(script.Constants.SuitTiers),
     RarityTiers = require(script.Constants.RarityTiers),
     ZoneConfigs = require(script.Constants.ZoneConfigs),
+    BoatTiers = require(script.Constants.BoatTiers), SurfaceRodTiers = require(script.Constants.SurfaceRodTiers),
+    SurfaceBaits = require(script.Constants.SurfaceBaits), WeatherConfigs = require(script.Constants.WeatherConfigs),
+    CaptainRanks = require(script.Constants.CaptainRanks), GuildConfigs = require(script.Constants.GuildConfigs),
 }
 
 -- NPC signals
