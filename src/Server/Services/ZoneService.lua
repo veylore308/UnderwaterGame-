@@ -84,7 +84,31 @@ end
 -- ============================================================
 
 function ZoneService:GetPlayerZone(player)
-	return self._playerZones[player]
+	return self._playerZones[player] or "SunkenShallows"
+end
+
+function ZoneService:CanEnterZone(player, zoneKey)
+	if zoneKey ~= "KelpForest" then return zoneKey == "SunkenShallows" end
+	local data = self.Services.PlayerDataService:GetData(player)
+	if not data then return false, "Player data not loaded" end
+	local config = Shared.Constants.ZoneConfigs.GetByKey(zoneKey)
+	local req = config and config.UnlockRequirement or { RequiredRod = "CoralRod", TotalCatches = 50 }
+	if not data.Gear.OwnedRods[req.RequiredRod] then return false, "Coral Rod required" end
+	if (data.Progression.TotalCatches or 0) < req.TotalCatches then return false, "Catch 50 fish required" end
+	return true
+end
+
+function ZoneService:SetPlayerZone(player, zoneKey)
+	local allowed, reason = self:CanEnterZone(player, zoneKey)
+	if not allowed then return false, reason end
+	self._playerZones[player] = zoneKey
+	self.Client.ZoneChanged:Fire(player, zoneKey)
+	return true
+end
+
+function ZoneService:GetZoneAtDepth(depth)
+	local config = Shared.Constants.ZoneConfigs.GetZoneAtDepth(math.abs(depth))
+	return config and config.Key or "SunkenShallows"
 end
 
 function ZoneService:GetZoneState(zoneKey)

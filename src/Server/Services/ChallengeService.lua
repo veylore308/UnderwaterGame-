@@ -14,7 +14,9 @@ local ChallengeService = Knit.CreateService({
 	Name = "ChallengeService",
 	Client = {
 		-- Client can request their daily challenges
-		GetDailyChallenges = Knit.CreateSignal(),  -- (player) -> challenges
+		GetDailyChallenges = Knit.CreateSignal(),  -- legacy push signal
+		GetChallenges = Knit.CreateSignal(),       -- (player) -> challenges
+		RerollChallenge = Knit.CreateSignal(),    -- (player, challengeId) -> result
 		ChallengeProgressUpdated = Knit.CreateSignal(), -- (challengeData) -> nil
 		AllChallengesCompleted = Knit.CreateSignal(),   -- (bonusRewards) -> nil
 		StreakMilestone = Knit.CreateSignal(),          -- (streakDays, reward) -> nil

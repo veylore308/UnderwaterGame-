@@ -703,6 +703,21 @@ function FishingHUD:ShowPopupText(text, color, duration)
     end)
 end
 
+function FishingHUD:ShowKelpEntanglement(duration)
+    self:ShowPopupText("KELP ENTANGLED!", Color3.fromRGB(80, 220, 120), duration or 1.5)
+end
+
+function FishingHUD:ClearKelpEntanglement() end
+
+function FishingHUD:SetTensionMeterObscured(obscured, duration)
+    if not self._tensionFrame then return end
+    self._tensionFrame.BackgroundTransparency = obscured and 0 or 0.3
+    if self._tensionLabel then self._tensionLabel.Text = obscured and "INK!" or "TENSION" end
+    if obscured and duration then
+        task.delay(duration, function() self:SetTensionMeterObscured(false) end)
+    end
+end
+
 -- ============================================================
 -- Show/hide everything
 -- ============================================================

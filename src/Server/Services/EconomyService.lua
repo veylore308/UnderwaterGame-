@@ -7,15 +7,21 @@
 
 local Knit = require(game:GetService("ReplicatedStorage"):WaitForChild("Knit"))
 local Shared = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"))
+local MarketplaceService = game:GetService("MarketplaceService")
+
+-- Configure this GamePass ID before publishing.
+local DIVE_PASS_GAMEPASS_ID = 0
 
 local EconomyService = Knit.CreateService({
     Name = "EconomyService",
     Client = {
         BuyItem = Knit.CreateSignal(),       -- (itemKey, itemType, quantity?) -> { Success, Message }
+        BuyDivePass = Knit.CreateSignal(),   -- () -> { Success, Message }
         SellFish = Knit.CreateSignal(),      -- (inventoryIndex) -> { Success, CoinsEarned }
         EquipRod = Knit.CreateSignal(),      -- (rodKey) -> { Success }
         GetShopData = Knit.CreateSignal(),   -- () -> { Rods, Suits, Consumables }
         TransactionResult = Knit.CreateSignal(),
+        ClaimTierReward = Knit.CreateSignal(),
     },
 })
 
@@ -25,12 +31,68 @@ local EconomyService = Knit.CreateService({
 -- PlayerDataService is injected by Knit at runtime
 -- [economyService].Services.PlayerDataService
 
+
+-- Start the authoritative gamepass purchase flow. Ownership is granted only
+-- after Roblox confirms the purchase (PromptGamePassPurchaseFinished).
+function EconomyService:ClaimTierReward(player, tier)
+    tier = tonumber(tier)
+    if not tier or tier < 1 or tier > 50 or tier % 1 ~= 0 then return { Success = false, Message = "Invalid tier" } end
+    local data = self.Services.PlayerDataService:GetData(player)
+    if not data then return { Success = false, Message = "Player data not loaded" } end
+    if data.DivePass.TiersClaimed[tier] then return { Success = false, Message = "Reward already claimed" } end
+    local progress = self.Services.PlayerDataService:GetDivePassProgress(player)
+    if progress.CurrentTier <= tier then return { Success = false, Message = "Tier is not unlocked" } end
+    -- Reward tables are shared with the client; these grants are validated here.
+    local rewards = { [1] = { Coins = 100 }, [8] = { Coins = 200 }, [10] = { Gems = 25 }, [18] = { Coins = 300 }, [20] = { Gems = 50 }, [28] = { Coins = 400 }, [35] = { Coins = 500 }, [38] = { Gems = 75 }, [42] = { Coins = 600 }, [48] = { Gems = 100 } }
+    local reward = rewards[tier]
+    if reward then
+        if reward.Coins then self.Services.PlayerDataService:AddCoins(player, reward.Coins) end
+        if reward.Gems then self.Services.PlayerDataService:AddGems(player, reward.Gems) end
+    end
+    data.DivePass.TiersClaimed[tier] = true
+    self.Services.PlayerDataService:SaveData(player)
+    return { Success = true, Message = "Tier reward claimed" }
+end
+
+function EconomyService:ProcessBuyDivePass(player)
+    local data = self.Services.PlayerDataService:GetData(player)
+    if not data then return { Success = false, Message = "Player data not loaded" } end
+    if data.DivePass.PremiumOwned then return { Success = false, Message = "Dive Pass already owned" } end
+    if DIVE_PASS_GAMEPASS_ID <= 0 then return { Success = false, Message = "Dive Pass is not configured" } end
+    local ok, owns = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, DIVE_PASS_GAMEPASS_ID)
+    if ok and owns then
+        return self:_grantDivePass(player, data)
+    end
+    MarketplaceService:PromptGamePassPurchase(player, DIVE_PASS_GAMEPASS_ID)
+    return { Success = true, Pending = true, Message = "Purchase prompt opened" }
+end
+
+function EconomyService:_grantDivePass(player, data)
+    if data.DivePass.PremiumOwned then return { Success = false, Message = "Dive Pass already owned" } end
+    data.DivePass.PremiumOwned = true
+    self.Services.PlayerDataService:SaveData(player)
+    return { Success = true, Message = "Dive Pass unlocked!" }
+end
+
 function EconomyService:KnitStart()
+    MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, purchased)
+        if passId ~= DIVE_PASS_GAMEPASS_ID or not purchased then return end
+        local data = self.Services.PlayerDataService:GetData(player)
+        if data then self:_grantDivePass(player, data) end
+    end)
     print("[EconomyService] Started")
 end
 
+
 function EconomyService:KnitInit()
     -- Client buy requests
+    self.Client.ClaimTierReward:Connect(function(player, tier)
+        return self:ClaimTierReward(player, tier)
+    end)
+    self.Client.BuyDivePass:Connect(function(player)
+        return self:ProcessBuyDivePass(player)
+    end)
+
     self.Client.BuyItem:Connect(function(player, itemKey, itemType)
         return self:ProcessBuyRequest(player, itemKey, itemType)
     end)

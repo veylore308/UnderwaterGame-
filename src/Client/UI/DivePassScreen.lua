@@ -16,6 +16,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage:WaitForChild("Shared"))
+local Knit = require(ReplicatedStorage:WaitForChild("Knit"))
 
 local DivePassScreen = {}
 DivePassScreen.__index = DivePassScreen
@@ -130,6 +131,7 @@ function DivePassScreen.new()
 	self._dailyStreak = 0
 	self._detailPopup = nil
 	self._purchaseDialog = nil
+		self._selectedChallengeId = nil
 
 	self:_createGUI()
 	self:_wireInput()
@@ -1309,6 +1311,7 @@ function DivePassScreen:Open(playerData, premiumOwned, onClose)
 
 	-- Read DivePass progress from PlayerDataService
 	self:_readPlayerData()
+		self:_fetchChallenges()
 
 	if self._isOpen then
 		self:_refreshAll()
@@ -1730,6 +1733,14 @@ end
 -- ============================================================
 -- Daily challenges population
 -- ============================================================
+function DivePassScreen:_fetchChallenges()
+    local service = Knit.GetService("ChallengeService")
+    if service then
+        local ok, result = pcall(function() return service.Client.GetChallenges:Call() end)
+        if ok and result then self._dailyChallenges = result end
+    end
+end
+
 function DivePassScreen:_populateDailyChallenges()
 	-- Clear existing cards
 	for _, card in pairs(self._challengeCards) do
