@@ -27,7 +27,8 @@ local NPC = Server:WaitForChild("NPC")
 local FishSignals = require(ReplicatedStorage.Shared.NPC:WaitForChild("FishSignals"))
 local FishNPC = require(NPC:WaitForChild("FishNPC"))
 local FishSpawner = require(NPC:WaitForChild("FishSpawner"))
-print("[Server] NPC system loaded — FishSignals, FishNPC, FishSpawner")
+local SurfaceFishAI = require(NPC:WaitForChild("SurfaceFishAI")) -- Phase 3
+print("[Server] NPC system loaded — FishSignals, FishNPC, FishSpawner, SurfaceFishAI")
 
 -- Load all services (ZoneService will use pre-loaded FishSpawner)
 local Services = Server:WaitForChild("Services")

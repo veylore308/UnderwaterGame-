@@ -39,6 +39,9 @@ local DEFAULT_DATA = {
         EquippedSuit = "BasicWetsuit",
         OwnedRods = { BambooRod = true },
         OwnedSuits = { BasicWetsuit = true },
+        -- Phase 3: Surface rod track (separate from underwater rods)
+        EquippedSurfaceRod = "CastingRod",
+        OwnedSurfaceRods = { CastingRod = true },
     },
     Progression = {
         Level = 1,
@@ -315,6 +318,37 @@ function PlayerDataService:EquipSuit(player, suitKey)
         return false, "NotOwned"
     end
     data.Gear.EquippedSuit = suitKey
+    self:SaveData(player)
+    return true
+end
+
+-- ============================================================
+-- Phase 3: Surface rod track (separate from underwater rods)
+-- ============================================================
+
+--- Check if player owns a surface rod
+function PlayerDataService:OwnsSurfaceRod(player, rodKey)
+    local data = self:GetData(player)
+    return data and data.Gear.OwnedSurfaceRods and data.Gear.OwnedSurfaceRods[rodKey] == true
+end
+
+--- Grant surface rod ownership
+function PlayerDataService:GrantSurfaceRod(player, rodKey)
+    local data = self:GetData(player)
+    if not data then return end
+    data.Gear.OwnedSurfaceRods = data.Gear.OwnedSurfaceRods or { CastingRod = true }
+    data.Gear.OwnedSurfaceRods[rodKey] = true
+    self:SaveData(player)
+end
+
+--- Equip a surface rod
+function PlayerDataService:EquipSurfaceRod(player, rodKey)
+    local data = self:GetData(player)
+    if not data then return false end
+    if not data.Gear.OwnedSurfaceRods or not data.Gear.OwnedSurfaceRods[rodKey] then
+        return false, "NotOwned"
+    end
+    data.Gear.EquippedSurfaceRod = rodKey
     self:SaveData(player)
     return true
 end

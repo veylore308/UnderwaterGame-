@@ -287,7 +287,60 @@ local ZoneConfigs = {
         },
         SpawnConditions = {},
     },
+
+
+    -- ============================================================
+    -- The Surface (Shared Ocean) — PHASE 3
+    -- y = 0 waterline; boats drive here; surface fish live 0–8m below.
+    -- Not an MVP zone — ZoneService loads it explicitly for Phase 3.
+    -- ============================================================
+    Surface = {
+        Name = "The Open Ocean",
+        Key = "Surface",
+        IsSurface = true,
+        IsMVP = false,
+
+        -- World bounds (3,000 x 3,000 stud square, GDD 2.4)
+        WorldBounds = { HalfSize = 1500 },
+
+        -- Navigational markers (GDD 2.2 / 6.1): Outpost at origin, buoys outward
+        SurfaceMarkers = {
+            { Name = "The Outpost", Key = "Outpost", Position = Vector3.new(0, 0, 0), Color = Color3.fromRGB(255, 200, 80), MarkerType = "Dock" },
+            { Name = "Shallows Buoy", Key = "ShallowsBuoy", Position = Vector3.new(0, 0, 400), Color = Color3.fromRGB(80, 220, 220), MarkerType = "Buoy", LinkedZone = "SunkenShallows" },
+            { Name = "Kelp Buoy", Key = "KelpBuoy", Position = Vector3.new(0, 0, 900), Color = Color3.fromRGB(80, 220, 120), MarkerType = "Buoy", LinkedZone = "KelpForest" },
+            { Name = "Trench Buoy", Key = "TrenchBuoy", Position = Vector3.new(0, 0, 1400), Color = Color3.fromRGB(160, 120, 255), MarkerType = "Buoy", LinkedZone = "AbyssalTrench", IsLocked = true },
+        },
+
+        -- Surface fish spawn across the open ocean; positions derive from
+        -- nearby players (interest-based), not fixed landmarks.
+        Landmarks = {
+            {
+                Name = "Open Ocean",
+                DepthRange = { Min = 0, Max = 8 },
+                Description = "The shared surface layer. Schools churn the water, predators stalk them.",
+                PrimaryFish = { "SilverSkipjack", "BlueSardine", "FlyingFish", "Bonito", "MahiMahi", "Sailfish", "Moonfish", "StormMarlin" },
+                CenterPosition = Vector3.new(0, -3, 0),
+                Radius = 1400,
+            },
+        },
+
+        -- Fish population management (GDD 4.6.3): 30/server, respawn every 45s,
+        -- despawn beyond 150 studs of any player.
+        Population = {
+            MaxConcurrentFish = 30,
+            RespawnIntervalSeconds = 45,
+            DespawnBoundary = 150,     -- studs from nearest player (surface rule)
+            LegendaryCap = 2,          -- 1 Moonfish + 1 Storm Marlin
+            Surface = true,
+        },
+
+        SpawnConditions = {
+            DayCycleMinutes = 20,
+            DuskDawnWindow = 3,        -- Moonfish surfaces first/last 3 min of day
+        },
+    },
 }
+
 
 -- ============================================================
 -- Helper: Get zone by key
