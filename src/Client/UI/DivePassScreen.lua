@@ -1910,8 +1910,14 @@ end
 -- Reroll handler
 -- ============================================================
 function DivePassScreen:_onRerollClicked()
-	-- TODO: Wire to ChallengeService to reroll a challenge
-	print("[DivePassScreen] Reroll requested (stub)")
+        local service = Knit.GetService("ChallengeService")
+        local id = self._selectedChallengeId or (self._dailyChallenges[1] and self._dailyChallenges[1].Id)
+        if not service or not id then return end
+        local result = service.Client.RerollChallenge:Call(id)
+        if result and result.Success then
+                self._dailyChallenges = result.Challenges or self._dailyChallenges
+                self:_populateDailyChallenges()
+        end
 end
 
 -- ============================================================
