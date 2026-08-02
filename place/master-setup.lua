@@ -680,6 +680,16 @@ print("[Setup] Part 3/4 complete.")
 print("")
 
 -- ============================================================
+-- PART 5: OUTPOST HUB (Phase 3)
+-- Requires outpost-setup.lua to be executed in the Studio command bar context.
+print("[Setup] Part 5/5: Creating Outpost hub...")
+local outpostSetup = Workspace:FindFirstChild("Outpost")
+if not outpostSetup then
+    warn("[Setup] Outpost model not found. Run place/outpost-setup.lua after this setup.")
+else
+    print("[Setup]   ✓ Outpost hub already present")
+end
+
 -- PART 4: VERIFICATION
 -- ============================================================
 print("[Setup] Part 4/4: Verifying project structure...")

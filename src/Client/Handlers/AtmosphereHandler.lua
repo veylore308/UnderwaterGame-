@@ -199,6 +199,16 @@ function AtmosphereHandler.new()
     self._grottoSediment = nil      -- Rocky Grotto floating sediment
     self._entanglementVFX = nil     -- active kelp entanglement particle effect
 
+    -- Phase 3 surface weather runtime
+    self._surfaceMode = false
+    self._outpostMode = false
+    self._weatherState = "Calm"
+    self._weatherContainer = nil
+    self._rainEmitter = nil
+    self._splashEmitter = nil
+    self._whitecaps = {}
+    self._weatherTween = nil
+
     -- Depth ratio cache
     self._depthRatio = 0            -- 0 (surface) to 1 (max depth)
 
@@ -1181,6 +1191,12 @@ function AtmosphereHandler:_onUpdate(deltaTime)
     -- Depth / depthRatio are set externally via UpdateDepth() from CameraController
     -- (single authority — no independent depth calculation here)
 
+    -- Surface weather owns the above-water visual layer.
+    if self._surfaceMode then
+        self:_updateSurfaceWeather(deltaTime)
+        return
+    end
+
     -- Update god ray visibility
     self:_updateGodRayVisibility(self._depthRatio)
 
@@ -1622,9 +1638,58 @@ function AtmosphereHandler:PlayKelpEntanglementVFX(playerPosition)
     self._entanglementVFX = anchor
 end
 
+-- ============================================================
+-- Phase 3: surface sky, weather and Outpost atmosphere
+-- ============================================================
+local SURFACE_WEATHER = {
+    Calm = {Ambient=Color3.fromRGB(120,150,185), Outdoor=Color3.fromRGB(170,190,210), Fog=Color3.fromRGB(150,190,220), FogEnd=300, Brightness=2.2, Density=0.12, Rain=0, Wind=Vector3.new(0,0,0), Water=Color3.fromRGB(60,120,190)},
+    Rain = {Ambient=Color3.fromRGB(75,85,105), Outdoor=Color3.fromRGB(105,115,135), Fog=Color3.fromRGB(105,120,140), FogEnd=150, Brightness=1.25, Density=0.25, Rain=180, Wind=Vector3.new(5,-2,1), Water=Color3.fromRGB(55,105,155)},
+    Storm = {Ambient=Color3.fromRGB(35,40,55), Outdoor=Color3.fromRGB(55,60,80), Fog=Color3.fromRGB(65,75,95), FogEnd=80, Brightness=0.75, Density=0.38, Rain=360, Wind=Vector3.new(12,-4,5), Water=Color3.fromRGB(38,78,125)},
+}
+function AtmosphereHandler:_ensureSurfaceVFX()
+    if self._weatherContainer then return end
+    local sky=Lighting:FindFirstChild("SurfaceSky") or Instance.new("Sky"); sky.Name="SurfaceSky"; sky.SkyboxBk="rbxasset://sky/sky512_bk.tex"; sky.SkyboxDn="rbxasset://sky/sky512_dn.tex"; sky.SkyboxFt="rbxasset://sky/sky512_ft.tex"; sky.SkyboxLf="rbxasset://sky/sky512_lf.tex"; sky.SkyboxRt="rbxasset://sky/sky512_rt.tex"; sky.SkyboxUp="rbxasset://sky/sky512_up.tex"; sky.Parent=Lighting
+    local anchor=Instance.new("Part"); anchor.Name="SurfaceWeatherVFX"; anchor.Size=Vector3.new(180,70,180); anchor.Position=Vector3.new(0,35,0); anchor.Transparency=1; anchor.Anchored=true; anchor.CanCollide=false; anchor.Parent=workspace
+    local rain=Instance.new("ParticleEmitter"); rain.Name="RainStreaks"; rain.Texture="rbxasset://textures/particles/ rain_main.dds"; rain.Lifetime=NumberRange.new(.6,1.1); rain.Speed=NumberRange.new(55,75); rain.Size=NumberSequence.new(.08); rain.Transparency=NumberSequence.new(.35); rain.SpreadAngle=Vector2.new(4,4); rain.Parent=anchor
+    local splash=Instance.new("ParticleEmitter"); splash.Name="SurfaceSplashes"; splash.Texture="rbxasset://textures/particles/sparkles_main.dds"; splash.Lifetime=NumberRange.new(.15,.35); splash.Speed=NumberRange.new(2,6); splash.Rate=0; splash.Size=NumberSequence.new(.15); splash.Parent=anchor
+    self._weatherContainer=anchor; self._rainEmitter=rain; self._splashEmitter=splash
+    for i=1,18 do local p=Instance.new("Part"); p.Name="StormWhitecap"; p.Size=Vector3.new(4,.12,1); p.Position=Vector3.new(math.random(-80,80),.8,math.random(-80,80)); p.Anchored=true; p.CanCollide=false; p.Material=Enum.Material.Neon; p.Color=Color3.fromRGB(220,240,255); p.Transparency=1; p.Parent=anchor; table.insert(self._whitecaps,p) end
+end
+function AtmosphereHandler:_tweenSurfaceLighting(preset, duration)
+    local info=TweenInfo.new(duration or 4,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+    local atmosphere=Lighting:FindFirstChild("Atmosphere")
+    if self._weatherTween then self._weatherTween:Cancel() end
+    self._weatherTween=TweenService:Create(Lighting,info,{Ambient=preset.Ambient,OutdoorAmbient=preset.Outdoor,FogColor=preset.Fog,FogEnd=preset.FogEnd,Brightness=preset.Brightness})
+    self._weatherTween:Play()
+    if atmosphere then TweenService:Create(atmosphere,info,{Density=preset.Density,Color=preset.Fog,Decay=preset.Fog}):Play() end
+end
+function AtmosphereHandler:_updateSurfaceWeather(deltaTime)
+    local p=SURFACE_WEATHER[self._weatherState] or SURFACE_WEATHER.Calm
+    if self._rainEmitter then self._rainEmitter.Rate=p.Rain; self._rainEmitter.Acceleration=p.Wind; self._rainEmitter.Enabled=p.Rain>0 end
+    for _,cap in ipairs(self._whitecaps) do cap.Transparency=(self._weatherState=="Storm") and .15 or 1; cap.Position=cap.Position+Vector3.new(p.Wind.X,0,p.Wind.Z)*deltaTime*.08 end
+end
+function AtmosphereHandler:TransitionToSurface()
+    self._surfaceMode=true; self._outpostMode=false; self._isUnderwater=false; self:_ensureSurfaceVFX(); self:SetWeather(self._weatherState); self:_destroyGodRays(); self:_destroyCausticLights()
+end
+function AtmosphereHandler:TransitionToOutpost()
+    self:TransitionToSurface(); self._outpostMode=true
+    self:_tweenSurfaceLighting({Ambient=Color3.fromRGB(155,125,100),Outdoor=Color3.fromRGB(215,180,130),Fog=Color3.fromRGB(205,180,145),FogEnd=220,Brightness=2.4,Density=.08},4)
+    Lighting.ClockTime=17.5
+end
+function AtmosphereHandler:SetWeather(weatherState)
+    if not SURFACE_WEATHER[weatherState] then return false end
+    self._weatherState=weatherState; self:_ensureSurfaceVFX(); self:_tweenSurfaceLighting(SURFACE_WEATHER[weatherState],4); return true
+end
+function AtmosphereHandler:PlayLightningStrike()
+    if self._weatherState~="Storm" then return end
+    local cc=Lighting:FindFirstChild("ColorCorrection"); local old=cc and cc.TintColor
+    if cc then cc.TintColor=Color3.new(1,1,1); cc.Brightness=.8; task.delay(.12,function() if cc then cc.TintColor=old or Color3.new(1,1,1); cc.Brightness=0 end end) end
+    task.delay(.75,function() self._lastThunderAt=os.clock() end) -- audio hook for AudioController
+end
 -- Called when player breaches surface
 function AtmosphereHandler:OnSurfaceBreach()
     self._isUnderwater = false
+    self:TransitionToSurface()
     self:_destroyGodRays()
     self:_destroyCausticLights()
 
@@ -1638,6 +1703,8 @@ end
 
 -- Called when player submerges
 function AtmosphereHandler:OnSubmerge()
+    self._surfaceMode = false
+    self._outpostMode = false
     if #self._godRayBeams == 0 then
         self:_createGodRays()
         self:_createCausticLights()
@@ -1696,6 +1763,8 @@ function AtmosphereHandler:Destroy()
     self:_destroyPlayerGlowRing()
     self:_destroyHeartbeatPulse()
 
+    if self._weatherContainer then self._weatherContainer:Destroy(); self._weatherContainer=nil end
+    self._rainEmitter=nil; self._splashEmitter=nil; self._whitecaps={}
     -- Clean rare spawn anchors
     for _, anchor in ipairs(self._rareSpawnVFX) do
         if anchor then anchor:Destroy() end
