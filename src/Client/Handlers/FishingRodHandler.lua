@@ -431,6 +431,7 @@ end
 function FishingRodHandler:_startBobberIdle(basePosition)
 	if not self._bobber then return end
 
+	self._bobberBasePosition = basePosition
 	self._bobberIdleConnection = RunService.Heartbeat:Connect(function(dt)
 		if not self._bobber then
 			self._bobberIdleConnection:Disconnect()
@@ -439,8 +440,16 @@ function FishingRodHandler:_startBobberIdle(basePosition)
 
 		-- Gentle bobbing
 		local bobOffset = math.sin(tick() * 3) * 0.15
-		self._bobber.Position = basePosition + Vector3.new(0, bobOffset, 0)
+		self._bobber.Position = self._bobberBasePosition + Vector3.new(0, bobOffset, 0)
 	end)
+end
+
+-- Phase 3: surface bobber drift — reposition to a server-authoritative
+-- position (bobber floats on the water plane, drifting with wind/current)
+function FishingRodHandler:MoveBobberTo(position)
+	if not self._bobber then return end
+	self._bobberBasePosition = Vector3.new(position.X, 0, position.Z)
+	self._bobber.Position = self._bobberBasePosition
 end
 
 function FishingRodHandler:PlayBobberBite()
